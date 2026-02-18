@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 use crate::player::Player;
 use crate::bullet::Bullet;
 use crate::asteroid::{Asteroid, AsteroidSize};
+use crate::shader::CrtEffect;
 
 // How many big asteroids spawn at the start of each game
 const INITIAL_ASTEROIDS: usize = 5;
@@ -27,6 +28,10 @@ pub struct Game {
     asteroids: Vec<Asteroid>,
     state: GameState,
     score: u32,
+
+    // The CRT post-processing effect.
+    // Wraps a render target + GLSL shader.
+    crt: CrtEffect,
 
     // Textures are stored here and cloned (cheap, ref-counted) into entities.
     // This means we only upload each image to the GPU once.
@@ -57,12 +62,17 @@ impl Game {
         // Spawn initial asteroids avoiding the player's starting position
         let asteroids = Self::spawn_asteroids(INITIAL_ASTEROIDS, player.pos, &tex_big);
 
+        // Initialize the CRT shader + render target.
+        // This must happen after the macroquad context is ready (i.e. inside main).
+        let crt = CrtEffect::new();
+
         Self {
             player,
             bullets: vec![],
             asteroids,
             state: GameState::Playing,
             score: 0,
+            crt,
             tex_background,
             tex_bullet,
             tex_big,
@@ -170,6 +180,11 @@ impl Game {
 
     // Called every frame after update(). Pure rendering, no logic here.
     pub fn draw(&self) {
+        // --- CRT BEGIN ---
+        // Redirect all draw calls to the off-screen render target.
+        // Everything drawn between begin() and end() gets the CRT shader applied.
+        self.crt.begin();
+
         // --- BACKGROUND ---
         // Stretch the background texture to fill the entire window
         draw_texture_ex(
@@ -221,6 +236,10 @@ impl Game {
             GameState::Victory  => self.draw_overlay("YOU WIN!", "Press R to play again"),
             GameState::Playing  => {}
         }
+
+        // --- CRT END ---
+        // Flush the render target to the real screen with the CRT shader applied.
+        self.crt.end();
     }
 
     // Draws a centered fullscreen dim overlay with a title and subtitle.

@@ -4,6 +4,7 @@ mod game;
 mod player;
 mod asteroid;
 mod bullet;
+mod shader;
 
 use game::Game;
 

@@ -1,73 +1,79 @@
 use macroquad::prelude::*;
 
-// The vertex shader just passes UVs through — all the work is in the fragment shader.
-const CRT_VERTEX: &str = r#"
-    #version 100
-    attribute vec3 position;
-    attribute vec2 texcoord;
-    varying lowp vec2 uv;
-    uniform mat4 Model;
-    uniform mat4 Projection;
+// The vertex shader just passes UV coordinates through to the fragment shader.
+// No transformation magic here — all the visual work happens in the fragment shader.
+const CRT_VERTEX: &str = "
+#version 100
+attribute vec3 position;
+attribute vec2 texcoord;
+varying lowp vec2 uv;
+uniform mat4 Model;
+uniform mat4 Projection;
 
-    void main() {
-        gl_Position = Projection * Model * vec4(position, 1.0);
-        uv = texcoord;
+void main() {
+    gl_Position = Projection * Model * vec4(position, 1.0);
+    uv = texcoord;
+}
+";
+
+// The fragment shader applies all CRT effects:
+// 1. Barrel distortion (curved screen)
+// 2. Chromatic aberration (color fringing)
+// 3. Scanlines
+// 4. Vignette (dark edges)
+const CRT_FRAGMENT: &str = "
+#version 100
+precision lowp float;
+varying vec2 uv;
+uniform sampler2D Texture;
+
+// Bends UV coords to simulate a curved CRT tube.
+// Increase the 0.15 multiplier for more extreme curvature.
+vec2 curve(vec2 uv) {
+    uv = (uv - 0.5) * 2.0;
+    uv *= 1.0 + dot(uv.yx, uv.yx) * 0.04;
+    uv = (uv / 2.0) + 0.5;
+    return uv;
+}
+
+void main() {
+    vec2 curved_uv = curve(uv);
+
+    // Anything outside 0..1 after curving is the black border around the screen
+    if (curved_uv.x < 0.0 || curved_uv.x > 1.0 ||
+        curved_uv.y < 0.0 || curved_uv.y > 1.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
     }
-"#;
 
-// The fragment shader does all the CRT magic.
-const CRT_FRAGMENT: &str = r#"
-    #version 100
-    precision lowp float;
-    varying vec2 uv;
-    uniform sampler2D Texture;
+    // Chromatic aberration: sample R/G/B at slightly different UV offsets.
+    // Mimics the color misalignment of old CRT phosphor guns.
+    float aberration = 0.0015;
+    float r = texture2D(Texture, curved_uv + vec2( aberration, 0.0)).r;
+    float g = texture2D(Texture, curved_uv).g;
+    float b = texture2D(Texture, curved_uv - vec2( aberration, 0.0)).b;
+    float a = texture2D(Texture, curved_uv).a;
+    vec4 color = vec4(r, g, b, a);
 
-    // Bend the UV coordinates to simulate a curved CRT screen.
-    // The higher the `bend` value, the more curved it looks.
-    vec2 curve(vec2 uv) {
-        uv = (uv - 0.5) * 2.0;             // remap to -1..1
-        uv *= 1.0 + dot(uv.yx, uv.yx) * 0.04; // apply barrel distortion
-        uv = (uv / 2.0) + 0.5;             // remap back to 0..1
-        return uv;
-    }
+    // Scanlines: creates horizontal dark bands like a real CRT.
+    // 800.0 controls line frequency — raise for denser lines.
+    // 0.15 controls darkness — raise for more contrast.
+    float scanline = sin(curved_uv.y * 800.0) * 0.15;
+    color.rgb -= scanline;
 
-    void main() {
-        vec2 curved_uv = curve(uv);
+    // Vignette: darkens screen edges, brighter in the center.
+    // Lower the pow() exponent for a stronger, wider dark border.
+    float vignette = 16.0 * curved_uv.x * curved_uv.y *
+                     (1.0 - curved_uv.x) * (1.0 - curved_uv.y);
+    vignette = clamp(pow(vignette, 0.15), 0.0, 1.0);
+    color.rgb *= vignette;
 
-        // If the curved UV goes outside 0..1 we're in the black border — draw black.
-        if (curved_uv.x < 0.0 || curved_uv.x > 1.0 ||
-            curved_uv.y < 0.0 || curved_uv.y > 1.0) {
-            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-            return;
-        }
+    // Slight brightness boost to compensate for the overall darkening
+    color.rgb *= 1.2;
 
-        // Chromatic aberration: sample R, G, B channels at slightly offset UVs.
-        // This mimics the color fringing of old CRT tubes.
-        float aberration = 0.002;
-        float r = texture2D(Texture, curved_uv + vec2( aberration, 0.0)).r;
-        float g = texture2D(Texture, curved_uv).g;
-        float b = texture2D(Texture, curved_uv - vec2( aberration, 0.0)).b;
-        float a = texture2D(Texture, curved_uv).a;
-        vec4 color = vec4(r, g, b, a);
-
-        // Scanlines: darken every other horizontal line.
-        // mod(gl_FragCoord.y, 2.0) alternates between 0 and 1 each pixel row.
-        float scanline = sin(curved_uv.y * 800.0) * 0.04;
-        color.rgb -= scanline;
-
-        // Vignette: darken the edges of the screen.
-        // smoothstep creates a soft falloff from center to edge.
-        float vignette = 16.0 * curved_uv.x * curved_uv.y *
-                         (1.0 - curved_uv.x) * (1.0 - curved_uv.y);
-        vignette = clamp(pow(vignette, 0.25), 0.0, 1.0);
-        color.rgb *= vignette;
-
-        // Slight brightness boost to compensate for the darkening effects
-        color.rgb *= 1.1;
-
-        gl_FragColor = color;
-    }
-"#;
+    gl_FragColor = color;
+}
+";
 
 pub struct CrtEffect {
     pub material: Material,
@@ -76,8 +82,8 @@ pub struct CrtEffect {
 
 impl CrtEffect {
     pub fn new() -> Self {
-        // RenderTarget is an off-screen texture we draw the game into first,
-        // then apply the shader when drawing it to the real screen.
+        // RenderTarget is an off-screen texture we draw the whole game into first.
+        // Then we draw THAT texture to the real screen with the CRT shader applied.
         let render_target = render_target(1280, 720);
         render_target.texture.set_filter(FilterMode::Linear);
 
@@ -92,7 +98,7 @@ impl CrtEffect {
         Self { material, render_target }
     }
 
-    // Call this BEFORE drawing anything in the frame.
+    // Call BEFORE drawing anything in the frame.
     // Redirects all draw calls to the off-screen render target.
     pub fn begin(&self) {
         set_camera(&Camera2D {
@@ -103,8 +109,8 @@ impl CrtEffect {
         });
     }
 
-    // Call this AFTER drawing everything in the frame.
-    // Draws the off-screen texture to the real screen with the CRT shader applied.
+    // Call AFTER drawing everything in the frame.
+    // Applies the CRT shader and draws the result to the real screen.
     pub fn end(&self) {
         // Switch back to the real screen
         set_default_camera();
@@ -116,8 +122,8 @@ impl CrtEffect {
             WHITE,
             DrawTextureParams {
                 dest_size: Some(vec2(screen_width(), screen_height())),
-                // Flip Y because render targets are upside down in OpenGL
-                flip_y: true,
+                // Render targets are flipped vertically in OpenGL — flip_y fixes that
+                flip_y: false,
                 ..Default::default()
             },
         );

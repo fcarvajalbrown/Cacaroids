@@ -35,6 +35,16 @@ impl Game {
         let tex_big        = load_texture("assets/poopbig.png").await.unwrap();
         let tex_medium     = load_texture("assets/poopmid.png").await.unwrap();
         let tex_small      = load_texture("assets/poopsmall.png").await.unwrap();
+        let score_text = format!("SCORE: {}", self.score);
+        let text_size = measure_text(&score_text, None, 32, 1.0);
+        let pad_x = 12.0;
+        let pad_y = 8.0;
+        let rx = 15.0;
+        let ry = 15.0;
+        let bx = rx - pad_x;
+        let by = ry - pad_y;
+        let bw = text_size.width + pad_x * 2.0;
+        let bh = text_size.height + pad_y * 2.0;
 
         for tex in [&tex_background, &tex_bullet, &tex_big, &tex_medium, &tex_small] {
             tex.set_filter(FilterMode::Linear);
@@ -158,6 +168,7 @@ impl Game {
         }
 
         // HUD
+        draw_rectangle(bx, by, bw, bh, Color::new(0.0, 0.0, 0.0, 0.6));
         draw_text(&format!("SCORE: {}", self.score), 20.0, 40.0, 32.0, WHITE);
 
         // Overlays

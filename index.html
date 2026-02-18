@@ -1,18 +1,24 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <title>Cacaroids</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { display: block; }
+        html, body, canvas {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: absolute;
+            background: black;
+            z-index: 0;
+        }
     </style>
 </head>
 <body>
-    <script>
-        var mq_js_bundle = "asteroids.js";
-    </script>
-    <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
+    <canvas id="glcanvas" tabindex='1'></canvas>
+    <script src="mq_js_bundle.js"></script>
     <script>load("asteroids_bg.wasm");</script>
 </body>
 </html>

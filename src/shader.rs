@@ -102,8 +102,8 @@ impl CrtEffect {
     // Redirects all draw calls to the off-screen render target.
     pub fn begin(&self) {
         set_camera(&Camera2D {
-            zoom: vec2(2.0 / screen_width(), 2.0 / screen_height()),
-            target: vec2(screen_width() / 2.0, screen_height() / 2.0),
+            zoom: vec2(2.0 / 1280.0, 2.0 / 720.0),
+            target: vec2(640.0, 360.0),
             render_target: Some(self.render_target.clone()),
             ..Default::default()
         });

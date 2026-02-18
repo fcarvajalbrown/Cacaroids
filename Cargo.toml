@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 macroquad = "0.4"
+miniquad = "=0.4.5"
 
 [profile.release]
 opt-level = 3
